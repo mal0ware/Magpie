@@ -1,0 +1,43 @@
+{
+  "items": [
+    {"media": {
+      "pk": "3500000000000000001", "id": "3500000000000000001_111", "code": "DReelAAA111",
+      "media_type": 2, "product_type": "clips", "taken_at": 1762000000,
+      "user": {"pk": "111", "username": "cook.with.sam", "full_name": "Sam"},
+      "caption": {"text": "3 ingredient flatbread\n\n200g flour, 200g yoghurt, salt"},
+      "video_duration": 42.366,
+      "video_versions": [
+        {"type": 102, "width": 480, "height": 854, "url": "https://cdn.example/v/reelA_480.mp4"},
+        {"type": 101, "width": 720, "height": 1280, "url": "https://cdn.example/v/reelA_720.mp4"}
+      ],
+      "image_versions2": {"candidates": [
+        {"width": 720, "height": 1280, "url": "https://cdn.example/t/reelA_720.jpg"},
+        {"width": 360, "height": 640, "url": "https://cdn.example/t/reelA_360.jpg"}
+      ]}
+    }},
+    {"media": {
+      "pk": "3500000000000000002", "code": "DImageBBB22",
+      "media_type": 1, "product_type": "feed", "taken_at": 1761900000,
+      "user": {"username": "type.daily"},
+      "caption": null,
+      "image_versions2": {"candidates": [{"width": 1080, "height": 1080, "url": "https://cdn.example/t/imgB.jpg"}]}
+    }},
+    {"media": {
+      "pk": "3500000000000000003", "code": "DCarouselC3",
+      "media_type": 8, "product_type": "carousel_container", "taken_at": 1761800000,
+      "user": {"username": "gym_notes"},
+      "caption": {"text": "Swipe for the full routine"},
+      "carousel_media": [
+        {"media_type": 1, "image_versions2": {"candidates": [{"url": "https://cdn.example/t/carC_1.jpg"}]}},
+        {"media_type": 2, "video_duration": 15.0,
+         "video_versions": [{"width": 720, "height": 900, "url": "https://cdn.example/v/carC_2.mp4"}],
+         "image_versions2": {"candidates": [{"url": "https://cdn.example/t/carC_2.jpg"}]}}
+      ]
+    }}
+  ],
+  "num_results": 3,
+  "more_available": true,
+  "next_max_id": "QVFDcursorPage2",
+  "auto_load_more_enabled": true,
+  "status": "ok"
+}

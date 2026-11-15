@@ -1,0 +1,17 @@
+{
+  "items": [
+    {"media": {
+      "pk": "3400000000000000004", "code": "DVideoDDD44",
+      "media_type": 2, "product_type": "feed", "taken_at": 1700000000,
+      "user": {"username": "old.uploads"},
+      "caption": {"text": "an older feed video"},
+      "video_duration": 61,
+      "video_versions": [{"width": 640, "height": 640, "url": "https://cdn.example/v/vidD.mp4"}],
+      "image_versions2": {"candidates": [{"url": "https://cdn.example/t/vidD.jpg"}]}
+    }},
+    {"media": {"pk": "1", "media_type": 2}}
+  ],
+  "num_results": 2,
+  "more_available": false,
+  "status": "ok"
+}
