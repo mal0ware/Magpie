@@ -1,0 +1,29 @@
+[project]
+name = "magpie"
+version = "0.0.1"
+description = "Your Instagram saved videos as a camera roll, with transcripts you can paste into an LLM."
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "websockets>=13",
+    "yt-dlp",
+    "faster-whisper>=1.1",
+    "starlette>=0.40",
+    "uvicorn>=0.30",
+]
+
+[project.scripts]
+magpie = "magpie.cli:main"
+
+[dependency-groups]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/magpie"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
