@@ -1,17 +1,42 @@
 """Subcommands owned by the web track. See docs/PLAN.md."""
 
+import sys
 import threading
 import webbrowser
 
 
 def _web(args) -> int:
-    import uvicorn
-
+    from . import autostart
     from .app import HOST, create_app
 
     url = f"http://{HOST}:{args.port}"
+
+    if args.action == "install":
+        link = autostart.install(args.port)
+        if not autostart.running(HOST, args.port):
+            autostart.start_background(args.port)
+        print(f"Magpie now starts at login and is running. Bookmark {url}")
+        print(f"(shortcut: {link}; log: {autostart.log_path()}; "
+              "`magpie web uninstall` removes it)")
+        return 0
+    if args.action == "uninstall":
+        had = autostart.uninstall()
+        print("Removed the login shortcut." if had else "There was no login shortcut.")
+        print("A copy that is already running keeps going until you log out.")
+        return 0
+
+    if autostart.running(HOST, args.port):
+        print(f"magpie web is already running: {url}")
+        if not (args.no_browser or args.background):
+            webbrowser.open(url)
+        return 0
+
+    import uvicorn
+
+    if args.background:  # no console under pythonw: send output to a log file
+        sys.stdout = sys.stderr = open(autostart.log_path(), "a", encoding="utf-8", buffering=1)
     print(f"magpie web: {url}  (Ctrl+C to stop)")
-    if not args.no_browser:
+    if not (args.no_browser or args.background):
         threading.Timer(0.8, webbrowser.open, [url]).start()
     uvicorn.run(create_app(), host=HOST, port=args.port, log_level="warning")
     return 0
@@ -21,6 +46,11 @@ def register(sub) -> None:
     from .app import PORT
 
     p = sub.add_parser("web", help="open the camera roll at http://127.0.0.1:8766")
+    p.add_argument("action", nargs="?", choices=["install", "uninstall"],
+                   help="install: run in the background from login on, so the address "
+                        "can be bookmarked (Windows). uninstall: undo that")
     p.add_argument("--port", type=int, default=PORT)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
+    p.add_argument("--background", action="store_true",
+                   help="no browser tab, output to ~/.magpie/web.log (what install uses)")
     p.set_defaults(func=_web)
