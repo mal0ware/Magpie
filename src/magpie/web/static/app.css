@@ -16,6 +16,7 @@ button:disabled { opacity: .4; cursor: default; }
 button.primary { background: var(--accent); color: #fff; font-weight: 600; }
 button.primary:hover:not(:disabled) { filter: brightness(1.1); border-color: transparent; }
 button.na { opacity: .45; }
+button.danger { color: #ff8a80; }
 button.busy { color: var(--warn); }
 code { font: 12px ui-monospace, "Cascadia Mono", Consolas, monospace; background: var(--chip); padding: 1px 6px; border-radius: 5px; }
 .dim { color: var(--muted); }

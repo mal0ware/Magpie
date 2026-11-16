@@ -4,13 +4,15 @@
 // Instagram's own saved-feed request from inside a logged-in instagram.com
 // tab. No debugger and no tab groups, so it works in Opera GX.
 //
-// It only reads. It makes one request per message from the daemon, never
+// It reads the saved feed, and it can unsave a post when Magpie names one
+// (the Unsave button). It makes one request per message from the daemon, never
 // retries, and hands the raw outcome (status, final URL, body) back so the
 // Python side decides whether to stop.
 
 const DAEMON_URL = "ws://127.0.0.1:19877/ext";
 const IG_APP_ID = "936619743392459";
 const SAVED_FEED = "https://www.instagram.com/api/v1/feed/saved/posts/";
+const UNSAVE = (id) => `https://www.instagram.com/api/v1/web/save/${id}/unsave/`;
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 const VERSION = chrome.runtime.getManifest().version;
@@ -76,7 +78,13 @@ function scheduleReconnect() {
 async function handleCommand(action, params) {
   if (action === "saved") {
     const tabId = await ensureInstagramTab();
-    return await fetchSavedPage(tabId, params.max_id || null);
+    return await igRequest(tabId, params.max_id
+      ? SAVED_FEED + "?max_id=" + encodeURIComponent(params.max_id) : SAVED_FEED, "GET");
+  }
+  if (action === "unsave") {
+    if (!/^\d{5,25}$/.test(String(params.media_id || ""))) throw new Error("bad media id");
+    const tabId = await ensureInstagramTab();
+    return await igRequest(tabId, UNSAVE(params.media_id), "POST");
   }
   if (action === "ping") {
     return { pong: true, version: VERSION };
@@ -126,14 +134,14 @@ function waitForTabComplete(tabId, timeoutMs = 20000) {
   });
 }
 
-// One page of the logged-in user's saved feed. Runs in the page's ISOLATED
+// One request to Instagram's own web API. Runs in the page's ISOLATED
 // world: same origin as instagram.com, so the session cookies ride along
 // exactly as they do for the site's own JavaScript.
-async function fetchSavedPage(tabId, maxId) {
+async function igRequest(tabId, url, method) {
   const results = await chrome.scripting.executeScript({
     target: { tabId },
-    args: [SAVED_FEED, maxId, IG_APP_ID],
-    func: async (base, cursor, appId) => {
+    args: [url, method, IG_APP_ID],
+    func: async (url, method, appId) => {
       const out = { page_url: location.href, logged_in: /(?:^|;\s*)ds_user_id=\d+/.test(document.cookie) };
       const headers = { "X-IG-App-ID": appId, "X-Requested-With": "XMLHttpRequest" };
       const csrf = document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/);
@@ -142,9 +150,9 @@ async function fetchSavedPage(tabId, maxId) {
         const claim = sessionStorage.getItem("www-claim-v2");
         if (claim) headers["X-IG-WWW-Claim"] = claim;
       } catch (e) {}
-      const url = cursor ? base + "?max_id=" + encodeURIComponent(cursor) : base;
+      if (method === "POST") headers["Content-Type"] = "application/x-www-form-urlencoded";
       try {
-        const res = await fetch(url, { headers, credentials: "include" });
+        const res = await fetch(url, { method, headers, credentials: "include" });
         out.status = res.status;
         out.url = res.url;
         out.redirected = res.redirected;

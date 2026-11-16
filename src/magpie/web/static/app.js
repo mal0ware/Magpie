@@ -121,6 +121,8 @@ function paint() {
   $("last30").disabled = state.total <= 0;
   $("last30").textContent = `Last ${LAST}`;
   $("clear").hidden = n === 0;
+  for (const id of ["free", "remove", "unsave"]) $(id).hidden = n === 0;
+  $("freeOld").hidden = n > 0 || state.total <= 0;
   $("copy").disabled = n === 0;
   $("copy").textContent = n ? `Copy merged transcripts (${n})` : "Copy merged transcripts";
   $("grid").classList.toggle("picking", n > 0);
@@ -202,6 +204,7 @@ async function openViewer(i) {
   } else {
     const why = it.media_status === "failed" ? "Download failed" + (it.error ? `: ${it.error}` : "")
       : it.media_status === "none" ? "No video for this post"
+      : it.media_status === "freed" ? "Video freed to save space. Open it on Instagram to watch."
       : "Not downloaded yet. Press Pull to fetch it.";
     stage = [it.has_thumb ? h("img", { src: `${src}/thumb.jpg`, alt: "" }) : h("div", { className: "blank" }, "▶"),
              h("div", { className: "note" }, why)];
@@ -267,6 +270,7 @@ document.addEventListener("keydown", (e) => {
 // -- Sync / Pull ---------------------------------------------------------------
 
 const NAMES = { sync: "Sync", pull: "Pull" };
+const JOBS = { ...NAMES, free: "Free video", remove: "Remove", unsave: "Unsave" };
 const NOT_YET = {
   sync: "Sync isn't available yet: the sources track hasn't been merged in.",
   pull: "Pull isn't available yet: the pipeline track hasn't been merged in.",
@@ -290,7 +294,7 @@ function paintActions(job) {
   if (job) {
     const last = job.lines[job.lines.length - 1];
     bar.className = `job ${job.state}`;
-    $("jobText").textContent = `${NAMES[job.name]}: ` + (running ? last || "starting…"
+    $("jobText").textContent = `${JOBS[job.name]}: ` + (running ? last || "starting…"
       : job.state === "done" ? last || "finished" : `failed. ${last || `exit code ${job.returncode}`}`);
     $("jobText").title = job.lines.join("\n");
   }
@@ -307,7 +311,7 @@ async function pollActions(wasRunning) {
   if (job && job.state === "running") {
     pollTimer = setTimeout(() => pollActions(true), 1000);
   } else if (wasRunning && job) {
-    toast(job.state === "done" ? `${NAMES[job.name]} finished` : `${NAMES[job.name]} failed`);
+    toast(job.state === "done" ? `${JOBS[job.name]} finished` : `${JOBS[job.name]} failed`);
     await reload();
     if (job.state === "done") setTimeout(() => { state.jobSeen = job.started; paintActions(job); }, 6000);
   }
@@ -325,6 +329,49 @@ for (const name of Object.keys(NAMES)) {
     }
   };
 }
+
+// -- Free video / Remove / Unsave ----------------------------------------------
+
+async function runJob(name, opts) {
+  try {
+    await api(`/api/actions/${name}`, opts);
+    state.selected.clear();
+    state.anchor = null;
+    closeViewer();
+    paint();
+    pollActions(true);
+  } catch (e) {
+    toast(e.message);
+    pollActions(false);
+  }
+}
+
+const ASK = {
+  free: (n) => `Delete the video files of ${plural(n, "post")}?
+
+Thumbnails, captions and transcripts stay, and the posts stay in the roll. You will not be able to play them here any more.`,
+  remove: (n) => `Remove ${plural(n, "post")} from Magpie?
+
+Their videos and transcripts are deleted from this computer. They stay saved on Instagram, and Sync will not bring them back.`,
+  unsave: (n) => `Unsave ${plural(n, "post")} on Instagram?
+
+This changes your Instagram account: they leave your Saved tab, and they are removed from Magpie too. Magpie sends one request per post, a few seconds apart.`,
+};
+for (const name of Object.keys(ASK)) {
+  $(name).onclick = () => {
+    const codes = [...state.selected];
+    if (codes.length && confirm(ASK[name](codes.length))) runJob(name, { shortcodes: codes });
+  };
+}
+$("freeOld").onclick = () => {
+  const answer = prompt(`Keep the videos of how many of your newest saves?
+
+Older posts keep their thumbnail, caption and transcript, but their video files are deleted.`, "100");
+  if (answer == null) return;
+  const keep = Number(answer);
+  if (!Number.isInteger(keep) || keep < 0) return toast("Type a whole number");
+  runJob("free", { keep });
+};
 
 pollActions(false);
 reload();

@@ -13,7 +13,11 @@ format as ytmerge, ready to paste into Claude.
 3. Transcripts are the point. Video files are kept because the roll plays them,
    but nothing else is done with them.
 
-Out of scope for v1: named collections UI, posting or unsaving, any platform
+Added after v1: freeing video files, removing posts from the roll, and
+unsaving on Instagram (`src/magpie/manage/`). The store gained a `hidden` flag
+and the `freed` media status for these.
+
+Out of scope: named collections UI, posting, any platform
 other than Instagram, hosting. It is a local tool on `127.0.0.1`.
 
 ## Decisions

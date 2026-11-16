@@ -35,7 +35,10 @@ on its card in `opera://extensions`.
 - When the daemon asks, it finds an instagram.com tab (or opens one in the
   background) and makes one `GET /api/v1/feed/saved/posts/` request from inside
   it, then hands the answer back. One request per ask, no retries.
-- It only reads. It never saves, unsaves, likes, posts or follows.
+- It reads your saved feed. The one change it can make is unsaving a post, and
+  only when you pick the post in Magpie and press Unsave (one
+  `POST /api/v1/web/save/<id>/unsave/` per post). It never saves, likes, posts
+  or follows.
 
 Permissions: `scripting` and `tabs` to run that request in an instagram.com
 tab, `alarms` to reconnect to the daemon, and host access to

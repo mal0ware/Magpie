@@ -142,7 +142,7 @@ def test_failed_transcript_is_counted_and_keeps_its_error(client, library):
 
 
 def test_actions_refused_when_a_track_is_unavailable(client, monkeypatch):
-    assert seams.available() == {"sync": True, "pull": True}
+    assert seams.available() == dict.fromkeys(["free", "remove", "unsave", "sync", "pull"], True)
     monkeypatch.setattr(seams, "available", lambda: {"sync": False, "pull": False})
     assert client.get("/api/actions").json() == {"available": {"sync": False, "pull": False},
                                                  "job": None}

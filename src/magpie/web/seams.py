@@ -14,6 +14,7 @@ thing with no edits once tracks A and B are merged:
 import argparse
 import importlib
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -67,8 +68,29 @@ def _format_item(item: Item) -> str:
 
 # -- Sync / Pull -------------------------------------------------------------
 
+_CODE = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
+
+
+def _codes(opts: dict) -> list[str]:
+    codes = opts.get("shortcodes")
+    if (not isinstance(codes, list) or not codes
+            or not all(isinstance(c, str) and _CODE.match(c) for c in codes)):
+        raise ValueError("send the shortcodes of the posts to act on")
+    return ["--", *codes]  # a shortcode may start with a dash
+
+
+def _free(opts: dict) -> list[str]:
+    keep = opts.get("keep")
+    if isinstance(keep, int) and not isinstance(keep, bool) and keep >= 0:
+        return ["free", "--keep", str(keep)]
+    return ["free", *_codes(opts)]
+
+
 # button name -> (track that owns the subcommand, argv after `magpie`)
 ACTIONS = {
+    "free": ("manage", _free),
+    "remove": ("manage", lambda opts: ["remove", *_codes(opts)]),
+    "unsave": ("manage", lambda opts: ["unsave", *_codes(opts)]),
     "sync": ("sources", lambda opts: ["sync"]),
     # No "last" means the whole library: the roll is the main way in, so its
     # Pull button catches up on everything that still needs downloading.
@@ -109,13 +131,17 @@ class Jobs:
             return False, "unknown action"
         if not available()[name]:
             return False, f"{name} is not available yet"
+        try:
+            argv = command(name, opts)
+        except (ValueError, TypeError) as e:
+            return False, str(e)
         with self._lock:
             if self._job and self._job["state"] == "running":
                 return False, f"{self._job['name']} is still running"
             job = {"name": name, "state": "running", "lines": [], "started": time.time(),
                    "returncode": None}
             self._job = job
-        threading.Thread(target=self._run, args=(job, command(name, opts)), daemon=True).start()
+        threading.Thread(target=self._run, args=(job, argv), daemon=True).start()
         return True, ""
 
     def _run(self, job: dict, argv: list[str]) -> None:

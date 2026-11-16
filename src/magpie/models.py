@@ -7,6 +7,7 @@ PENDING = "pending"
 DONE = "done"
 FAILED = "failed"
 NONE = "none"  # nothing to do: an image post, or a video with no speech
+FREED = "freed"  # media_status only: the video was deleted to save space
 
 
 @dataclass
@@ -27,3 +28,4 @@ class Item:
     media_status: str = PENDING
     transcript_status: str = PENDING
     error: str | None = None
+    hidden: int = 0  # 1 = removed from the roll; kept so a sync does not bring it back

@@ -50,6 +50,9 @@ class Store:
             f"{c} PRIMARY KEY" if c == "shortcode" else c for c in _COLS
         )
         self.db.execute(f"CREATE TABLE IF NOT EXISTS items ({cols})")
+        have = {r[1] for r in self.db.execute("PRAGMA table_info(items)")}
+        if "hidden" not in have:  # libraries made before items could be removed
+            self.db.execute("ALTER TABLE items ADD COLUMN hidden DEFAULT 0")
         self.db.commit()
 
     # -- writes ------------------------------------------------------------
@@ -100,6 +103,12 @@ class Store:
             (status, error, shortcode))
         self.db.commit()
 
+    def hide(self, shortcode: str) -> None:
+        """Take an item out of the roll. The row stays, so `known()` is still
+        true and a later sync will not list it again."""
+        self.db.execute("UPDATE items SET hidden = 1 WHERE shortcode = ?", (shortcode,))
+        self.db.commit()
+
     # -- reads -------------------------------------------------------------
 
     def known(self, shortcode: str) -> bool:
@@ -113,20 +122,20 @@ class Store:
     def recent(self, limit: int = 30, offset: int = 0,
                collection: str | None = None) -> list[Item]:
         """Newest-saved first. This is the camera-roll order and what 'last 30' means."""
-        where, args = ("WHERE collection = ?", [collection]) if collection else ("", [])
+        where, args = ("AND collection = ?", [collection]) if collection else ("", [])
         rows = self.db.execute(
-            f"SELECT * FROM items {where} ORDER BY saved_seq DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM items WHERE hidden = 0 {where} ORDER BY saved_seq DESC LIMIT ? OFFSET ?",
             (*args, limit, offset))
         return [Item(**dict(r)) for r in rows]
 
     def count(self) -> int:
-        return self.db.execute("SELECT COUNT(*) FROM items").fetchone()[0]
+        return self.db.execute("SELECT COUNT(*) FROM items WHERE hidden = 0").fetchone()[0]
 
     def with_status(self, column: str, status: str, limit: int = -1) -> list[Item]:
         """Items whose media_status or transcript_status equals status, newest-saved first."""
         if column not in ("media_status", "transcript_status"):
             raise ValueError(column)
         rows = self.db.execute(
-            f"SELECT * FROM items WHERE {column} = ? ORDER BY saved_seq DESC LIMIT ?",
+            f"SELECT * FROM items WHERE {column} = ? AND hidden = 0 ORDER BY saved_seq DESC LIMIT ?",
             (status, limit))
         return [Item(**dict(r)) for r in rows]

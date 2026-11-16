@@ -23,6 +23,7 @@ Everything stays on your machine. Transcription runs locally with [faster-whispe
 - [First run](#first-run)
 - [Bookmark it](#bookmark-it)
 - [Using the camera roll](#using-the-camera-roll)
+- [Tidying up](#tidying-up)
 - [Command line](#command-line)
 - [The output](#the-output)
 - [No extension? Two other ways in](#no-extension-two-other-ways-in)
@@ -127,6 +128,9 @@ The page is the main way to use Magpie. You rarely need the command line after s
 | **Pull** | Downloads and transcribes everything in the library that still needs it. |
 | **Last 30** | Selects your 30 most recent saves. |
 | **Copy merged transcripts** | Copies the selected items as one block of text, ready to paste. |
+| **Free old videos…** | Deletes the video files of everything older than your newest N saves. See [Tidying up](#tidying-up). |
+
+Select one or more tiles and three more buttons appear: **Free video**, **Remove** and **Unsave**. They are explained under [Tidying up](#tidying-up).
 
 Each tile has a small dot for its transcript: done, waiting, or nothing to transcribe.
 
@@ -136,6 +140,24 @@ Each tile has a small dot for its transcript: done, waiting, or nothing to trans
 - In the viewer, the left and right arrows move between posts. Escape closes it.
 
 A typical session: open the bookmark, press **Sync**, press **Pull**, press **Last 30**, press **Copy**, paste into Claude.
+
+## Tidying up
+
+Videos are nearly all of the disk space. Transcripts, captions and thumbnails are tiny. There are three ways to take things out, from mild to final. Each one asks before it does anything.
+
+| Button | What happens | Still on Instagram? |
+| --- | --- | --- |
+| **Free video** | Deletes the video file. The tile, thumbnail, caption and transcript stay, and Copy still works. You just cannot play it in Magpie any more. | Yes |
+| **Remove** | Takes the post out of the roll and deletes its files from your computer. Sync will not bring it back. | Yes |
+| **Unsave** | Unsaves the post on Instagram, then removes it from the roll. | No |
+
+**Free old videos…** does the first one in bulk: it asks how many of your newest saves should keep their video and frees the rest.
+
+A video that has not been transcribed yet is never freed, because its transcript could not be made afterwards. Run Pull first.
+
+Unsave is the only thing in Magpie that changes your Instagram account. It sends one request per post, a few seconds apart, and stops at the first answer that is not a plain success. If you unsave something by mistake, save it again on Instagram and it comes back on the next Sync as a new save.
+
+None of these can be undone from inside Magpie.
 
 ## Command line
 
@@ -156,6 +178,9 @@ uv run magpie copy --last 30    # merged transcripts to the clipboard
 | `pull` | Downloads then transcribes the last 30. `--last N` changes the count, `--all` does everything, `--retry` takes items that failed before. |
 | `fetch`, `transcribe` | The two halves of `pull`, on their own. With no `--last` they cover everything. |
 | `copy` | Puts the merged text of the last 30 on the clipboard. `--last N` changes the count, `--stdout` prints it too. |
+| `free SHORTCODE...` | Deletes those posts' video files. `free --keep N` frees every video older than your newest N saves. |
+| `remove SHORTCODE...` | Takes posts out of the roll and deletes their files. |
+| `unsave SHORTCODE...` | Unsaves posts on Instagram, then removes them from the roll. |
 | `import saved_posts.json` | Adds saves from an Instagram data export. |
 | `add URL...` | Adds post links by hand. |
 | `bridge --status` | Shows whether the extension is connected. `--stop` stops the background bridge. |
@@ -224,11 +249,11 @@ To start over, close Magpie and delete that folder. Nothing on Instagram changes
 
 ## Going easy on Instagram
 
-Magpie only reads. It never saves, unsaves, likes, follows or posts.
+Magpie reads your saves. The one thing it can change is unsaving a post, and only when you select it and press **Unsave**. It never saves, likes, follows, comments or posts.
 
-It makes one request per page of saves, waits a few seconds between pages, and stops at the first post it already has. If Instagram answers with a rate limit, a login page or a checkpoint, Magpie stops and tells you which. It does not retry.
+Syncing makes one request per page of saves, waits a few seconds between pages, and stops at the first post it already has. Unsaving makes one request per post with the same kind of pause. If Instagram answers with a rate limit, a login page or a checkpoint, Magpie stops and tells you which. It does not retry.
 
-The request it makes is Instagram's own private web API, the one the site uses. It is not an official API. Use Magpie on your own account and at your own risk.
+The requests it makes are Instagram's own private web API, the one the site uses. It is not an official API. Use Magpie on your own account and at your own risk.
 
 ## When something goes wrong
 
@@ -242,6 +267,7 @@ The request it makes is Instagram's own private web API, the one the site uses. 
 | Downloads fail a day after a sync | Instagram's video links expire within hours. Run `sync --limit N` again to refresh them, then `pull`. |
 | Transcription is slow | You are on the CPU. Check your NVIDIA driver is current, or use a smaller model such as `base.en`. |
 | `ffmpeg` not found | Install it (see [Before you start](#before-you-start)) and open a new terminal. |
+| Unsave says the extension is an older version | On the extensions page, press the reload arrow on the Magpie Bridge card. |
 | The bookmark does not load | Run `uv run magpie`. If you used `web install`, look at `~/.magpie/web.log`. |
 | Port 8766 is taken | `uv run magpie web --port 8777`, and bookmark that address instead. |
 
