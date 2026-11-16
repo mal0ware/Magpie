@@ -201,3 +201,7 @@ def _wait(client):
             return job
         time.sleep(0.1)
     raise AssertionError("job never finished")
+
+
+def test_pull_without_a_count_covers_the_whole_library():
+    assert seams.command("pull", {})[3:] == ["pull", "--all"]

@@ -280,7 +280,7 @@ function paintActions(job) {
     b.classList.toggle("na", !ok);
     b.setAttribute("aria-disabled", String(!ok));
     b.title = !ok ? NOT_YET[name]
-      : name === "sync" ? "List new Instagram saved posts" : `Download and transcribe the last ${LAST}`;
+      : name === "sync" ? "List new Instagram saved posts" : "Download and transcribe everything that is new";
     b.disabled = !!running;
     b.classList.toggle("busy", !!running && job.name === name);
     b.textContent = running && job.name === name ? `${NAMES[name]}…` : NAMES[name];
@@ -317,7 +317,7 @@ for (const name of Object.keys(NAMES)) {
   $(name).onclick = async () => {
     if (!state.actions[name]) return toast(NOT_YET[name]);
     try {
-      await api(`/api/actions/${name}`, name === "pull" ? { last: LAST } : {});
+      await api(`/api/actions/${name}`, {});
       pollActions(true);
     } catch (e) {
       toast(e.message);

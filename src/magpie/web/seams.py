@@ -70,7 +70,10 @@ def _format_item(item: Item) -> str:
 # button name -> (track that owns the subcommand, argv after `magpie`)
 ACTIONS = {
     "sync": ("sources", lambda opts: ["sync"]),
-    "pull": ("pipeline", lambda opts: ["pull", "--last", str(int(opts.get("last", 30)))]),
+    # No "last" means the whole library: the roll is the main way in, so its
+    # Pull button catches up on everything that still needs downloading.
+    "pull": ("pipeline", lambda opts: ["pull", "--last", str(int(opts["last"]))]
+             if opts.get("last") else ["pull", "--all"]),
 }
 
 
