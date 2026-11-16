@@ -98,13 +98,13 @@ def test_media_missing_and_unknown(client, library, home):
 def test_merged_last_n_uses_the_banner(client, library):
     m = client.post("/api/merged", json={"last": 3}).json()
     assert m["shortcodes"] == ["e", "d", "c"] and m["count"] == 3
-    assert m["without_transcript"] == 2 and m["source"] == "fallback"
+    assert m["without_transcript"] == 2 and m["source"] == "pipeline"
     blocks = m["text"].split("\n\n" + RULE + "\n")
     assert len(blocks) == 3
     assert m["text"].endswith(
         f"{RULE}\nCREATOR: @maker_c\nURL:     https://www.instagram.com/reel/c/\n"
-        f"CAPTION: caption c\nsecond line\n{RULE}\n\n[0:00] hello from c\n[0:04] bye")
-    assert "(not transcribed yet)" in blocks[0]   # e
+        f"CAPTION: caption c\nsecond line\n{RULE}\n\n[0:00] hello from c\n[0:04] bye\n")
+    assert "(no transcript yet)" in blocks[0]   # e
     assert blocks[1].endswith("(no speech)")       # d
 
 
@@ -132,16 +132,18 @@ def test_merged_switches_to_the_pipeline_formatter_when_present(client, library,
     assert m["text"] == "REAL:e,d" and m["source"] == "pipeline"
 
 
-def test_failed_transcript_falls_back_to_a_placeholder_body(client, library):
+def test_failed_transcript_is_counted_and_keeps_its_error(client, library):
     s = store.Store()
     s.set_transcript("a", FAILED, "whisper blew up")
     s.db.close()
     m = client.post("/api/merged", json=["a"]).json()
-    assert m["text"].endswith("(not transcribed yet)") and m["without_transcript"] == 1
+    assert m["without_transcript"] == 1
     assert client.get("/api/items/a").json()["error"] == "whisper blew up"
 
 
-def test_actions_unavailable_until_the_tracks_register_them(client):
+def test_actions_refused_when_a_track_is_unavailable(client, monkeypatch):
+    assert seams.available() == {"sync": True, "pull": True}
+    monkeypatch.setattr(seams, "available", lambda: {"sync": False, "pull": False})
     assert client.get("/api/actions").json() == {"available": {"sync": False, "pull": False},
                                                  "job": None}
     r = client.post("/api/actions/sync", json={})
