@@ -120,12 +120,20 @@ def _short(exc: BaseException) -> str:
 def fetch_item(store: Store, item: Item) -> str:
     """Fetch one item's media. Returns the new media_status. Raises on failure."""
     sc = item.shortcode
-    if item.kind == "image":
+    video, thumb = paths.video_path(sc), paths.thumb_path(sc)
+    # A listed carousel with no video_url is all photos: the listing gives a
+    # video_url whenever a slide is a video. Keep its cover for the roll.
+    photos_only = item.kind == "carousel" and item.thumb_url and not item.video_url
+    if item.kind == "image" or photos_only:
+        if item.thumb_url:
+            try:
+                download_url(item.thumb_url, thumb)
+            except Exception:
+                thumb.unlink(missing_ok=True)
         store.set_media(sc, NONE)
         store.set_transcript(sc, NONE)
         return NONE
 
-    video, thumb = paths.video_path(sc), paths.thumb_path(sc)
     info: dict = {}
     got = False
     if item.video_url:
