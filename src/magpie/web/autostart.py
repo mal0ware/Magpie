@@ -36,15 +36,16 @@ def shortcut_path() -> Path:
 
 
 def background_command(port: int) -> list[str]:
-    """The hidden server process: pythonw has no console window."""
-    exe = Path(sys.executable)
-    pythonw = exe.with_name("pythonw.exe")
-    return [str(pythonw if pythonw.exists() else exe), "-m", "magpie.cli",
-            "web", "--background", "--port", str(port)]
+    """The server process. It is a console program on purpose: a virtualenv's
+    pythonw.exe can hand off to the console python.exe anyway, which makes
+    Windows open an empty terminal window. Callers hide the console instead."""
+    return [sys.executable, "-m", "magpie.cli", "web", "--background", "--port", str(port)]
 
 
 def start_background(port: int) -> None:
-    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+    # CREATE_NO_WINDOW gives it a console with no window, which its children
+    # inherit. (DETACHED_PROCESS gives it none, so a child opens a visible one.)
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
     subprocess.Popen(background_command(port), creationflags=flags, close_fds=True,
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
@@ -56,14 +57,16 @@ def install(port: int) -> Path:
     _require_windows()
     cmd = background_command(port)
     link = shortcut_path()
+    conhost = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "conhost.exe"
 
     def q(s: str) -> str:  # a PowerShell single-quoted string
         return "'" + s.replace("'", "''") + "'"
 
     script = (
         f"$s = (New-Object -ComObject WScript.Shell).CreateShortcut({q(str(link))}); "
-        f"$s.TargetPath = {q(cmd[0])}; "
-        f"$s.Arguments = {q(subprocess.list2cmdline(cmd[1:]))}; "
+        # conhost --headless runs a console program with no window at all.
+        f"$s.TargetPath = {q(str(conhost))}; "
+        f"$s.Arguments = {q('--headless ' + subprocess.list2cmdline(cmd))}; "
         f"$s.WorkingDirectory = {q(str(Path.home()))}; "
         "$s.Description = 'Magpie camera roll'; $s.Save()"
     )

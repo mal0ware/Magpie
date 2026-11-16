@@ -6,7 +6,7 @@ from magpie import cli
 from magpie.web import autostart
 
 
-def test_background_command_is_hidden_and_points_at_the_roll():
+def test_background_command_points_at_the_roll():
     cmd = autostart.background_command(8766)
     assert cmd[1:] == ["-m", "magpie.cli", "web", "--background", "--port", "8766"]
 

@@ -69,7 +69,10 @@ def start_daemon() -> None:
     """Start the daemon detached, so it outlives this command, and wait for it."""
     flags = 0
     if os.name == "nt":
-        flags = 0x00000008 | 0x00000200  # DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+        # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP. Not DETACHED_PROCESS: with no
+        # console at all, the interpreter a virtualenv launcher hands off to
+        # opens a visible, empty terminal window.
+        flags = 0x08000000 | 0x00000200
     with open(log_path(), "ab") as logf:
         subprocess.Popen(
             [sys.executable, "-m", "magpie.sources.daemon"],
