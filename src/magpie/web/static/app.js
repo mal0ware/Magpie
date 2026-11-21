@@ -91,6 +91,7 @@ async function loadMore() {
   try {
     const page = await api(`/api/items?limit=${PAGE}&offset=${state.items.length}`);
     state.total = page.total;
+    state.toPull = page.to_pull || 0;
     const start = state.items.length;
     state.items.push(...page.items);
     $("grid").append(...page.items.map((it, n) => tile(it, start + n)));
@@ -192,24 +193,116 @@ function paintViewerSelect() {
   $("vSelect").classList.toggle("primary", on);
 }
 
-async function openViewer(i) {
-  if (i < 0 || i >= state.items.length) return;
-  state.open = i;
+// -- one post at a time: download on open ----------------------------------------
+//
+// Nothing is downloaded until a post is opened. Opening one that is not on
+// this computer fetches and transcribes just that post, after a short pause so
+// that flicking through with the arrow keys does not download every post passed.
+
+const DWELL_MS = 1200;
+let dwellTimer;
+let fetching = null; // shortcode of the post being downloaded for the viewer
+
+function paintStage(i, note) {
   const it = state.items[i];
   const src = `/media/${it.shortcode}`;
-  let stage;
   if (it.has_video) {
-    stage = [h("video", { src: `${src}/video.mp4`, controls: true, autoplay: true, playsInline: true,
-                          poster: it.has_thumb ? `${src}/thumb.jpg` : "" })];
-  } else {
-    const why = it.media_status === "failed" ? "Download failed" + (it.error ? `: ${it.error}` : "")
-      : it.media_status === "none" ? "No video for this post"
-      : it.media_status === "freed" ? "Video freed to save space. Open it on Instagram to watch."
-      : "Not downloaded yet. Press Pull to fetch it.";
-    stage = [it.has_thumb ? h("img", { src: `${src}/thumb.jpg`, alt: "" }) : h("div", { className: "blank" }, "▶"),
-             h("div", { className: "note" }, why)];
+    $("vStage").replaceChildren(h("video", { src: `${src}/video.mp4`, controls: true, autoplay: true,
+      playsInline: true, poster: it.has_thumb ? `${src}/thumb.jpg` : "" }));
+    return;
   }
-  $("vStage").replaceChildren(...stage);
+  const busy = fetching === it.shortcode;
+  const why = note ? note
+    : busy ? "Downloading…"
+    : it.media_status === "failed" ? "Download failed" + (it.error ? `: ${it.error}` : "")
+    : it.media_status === "none" ? "No video for this post"
+    : it.media_status === "freed" ? "Video freed to save space."
+    : "Not on this computer yet.";
+  const box = h("div", { className: "note" }, why);
+  if (!busy && it.media_status !== "none") {
+    const b = h("button", {}, it.media_status === "pending" ? "Download" : "Download again");
+    b.onclick = () => fetchOne(it.shortcode);
+    box.append(" ", b);
+  }
+  $("vStage").replaceChildren(
+    it.has_thumb ? h("img", { src: `${src}/thumb.jpg`, alt: "" }) : h("div", { className: "blank" }, "▶"),
+    box);
+}
+
+async function loadTranscript(i) {
+  const it = state.items[i];
+  const status = { pending: "not transcribed yet", failed: "failed", none: "no speech" }[it.transcript_status];
+  try {
+    const full = await api(`/api/items/${it.shortcode}`);
+    if (state.open !== i) return;
+    $("vTranscript").textContent = full.transcript || "";
+    $("vStatus").textContent = full.transcript ? ""
+      : fetching === it.shortcode && it.has_video ? "transcribing…" : status || "empty";
+    if (it.transcript_status === "failed" && full.error) $("vStatus").textContent = `failed: ${full.error}`;
+  } catch (e) {
+    if (state.open === i) $("vStatus").textContent = `could not load (${e.message})`;
+  }
+}
+
+// Take a fresh copy of one post from the server into the roll and the viewer.
+async function refreshOne(shortcode) {
+  const i = state.items.findIndex((it) => it.shortcode === shortcode);
+  if (i < 0) return null;
+  const had = state.items[i].has_video;
+  const full = await api(`/api/items/${shortcode}`);
+  delete full.transcript;
+  Object.assign(state.items[i], full);
+  $("grid").children[i]?.replaceWith(tile(state.items[i], i));
+  if (state.open === i) {
+    if (!had || !state.items[i].has_video) paintStage(i); // never restart a video that is playing
+    await loadTranscript(i);
+  }
+  return state.items[i];
+}
+
+async function fetchOne(shortcode) {
+  const i = state.items.findIndex((it) => it.shortcode === shortcode);
+  if (i < 0 || fetching) return;
+  try {
+    await api("/api/actions/pull", { shortcodes: [shortcode] });
+  } catch (e) {
+    // Something else is running (a Sync, a Pull, another download).
+    if (state.open === i) paintStage(i, `Busy: ${e.message}. Try again in a moment.`);
+    return;
+  }
+  fetching = shortcode;
+  if (state.open === i) paintStage(i);
+  try {
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const { job } = await api("/api/actions");
+      paintActions(job);
+      const running = job && job.state === "running";
+      if (!running) fetching = null;
+      const it = await refreshOne(shortcode);
+      if (!running) {
+        if (job && job.state === "done") { state.jobSeen = job.started; paintActions(job); }
+        else if (it && state.open === state.items.indexOf(it)) paintStage(state.open);
+        break;
+      }
+    }
+  } catch (e) {
+    toast(`Lost track of the download: ${e.message}`);
+  } finally {
+    fetching = null;
+    pollActions(false);
+  }
+}
+
+async function openViewer(i) {
+  if (i < 0 || i >= state.items.length) return;
+  clearTimeout(dwellTimer);
+  state.open = i;
+  const it = state.items[i];
+  paintStage(i);
+  if (!it.has_video && it.media_status === "pending" && !fetching) {
+    dwellTimer = setTimeout(() => { if (state.open === i) fetchOne(it.shortcode); }, DWELL_MS);
+  }
   $("vAuthor").textContent = it.author ? "@" + it.author : it.shortcode;
   $("vAuthor").href = it.url;
   $("vAuthor").title = "Open on Instagram";
@@ -228,21 +321,12 @@ async function openViewer(i) {
   document.body.style.overflow = "hidden";
   paintViewerSelect();
   if (i >= state.items.length - 2) loadMore();
-
-  const status = { pending: "not transcribed yet", failed: "failed", none: "no speech" }[it.transcript_status];
-  try {
-    const full = await api(`/api/items/${it.shortcode}`);
-    if (state.open !== i) return;
-    $("vTranscript").textContent = full.transcript || "";
-    $("vStatus").textContent = full.transcript ? "" : status || "empty";
-    if (it.transcript_status === "failed" && full.error) $("vStatus").textContent = `failed: ${full.error}`;
-  } catch (e) {
-    if (state.open === i) $("vStatus").textContent = `could not load (${e.message})`;
-  }
+  await loadTranscript(i);
 }
 
 function closeViewer() {
   if (state.open < 0) return;
+  clearTimeout(dwellTimer);
   const i = state.open;
   state.open = -1;
   $("vStage").replaceChildren(); // stops playback
@@ -284,7 +368,8 @@ function paintActions(job) {
     b.classList.toggle("na", !ok);
     b.setAttribute("aria-disabled", String(!ok));
     b.title = !ok ? NOT_YET[name]
-      : name === "sync" ? "List new Instagram saved posts" : "Download and transcribe everything that is new";
+      : name === "sync" ? "List new Instagram saved posts and fetch their thumbnails"
+      : "Download and transcribe every post that is not on this computer yet";
     b.disabled = !!running;
     b.classList.toggle("busy", !!running && job.name === name);
     b.textContent = running && job.name === name ? `${NAMES[name]}…` : NAMES[name];
@@ -320,6 +405,10 @@ async function pollActions(wasRunning) {
 for (const name of Object.keys(NAMES)) {
   $(name).onclick = async () => {
     if (!state.actions[name]) return toast(NOT_YET[name]);
+    if (name === "pull" && state.toPull > 0 && !confirm(
+      `Download and transcribe ${plural(state.toPull, "post")}?
+
+That is roughly ${Math.round(state.toPull * 7).toLocaleString()} MB of video. To get just one, click it in the roll instead.`)) return;
     try {
       await api(`/api/actions/${name}`, {});
       pollActions(true);

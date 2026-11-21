@@ -47,7 +47,7 @@ def library(home):
 
 
 def test_empty_library(client):
-    assert client.get("/api/items").json() == {"items": [], "total": 0, "limit": 60, "offset": 0}
+    assert client.get("/api/items").json() == {"items": [], "total": 0, "to_pull": 0, "limit": 60, "offset": 0}
     assert client.post("/api/merged", json={"last": 30}).json()["text"] == ""
     assert "Nothing saved yet" in client.get("/").text
 
@@ -205,3 +205,26 @@ def _wait(client):
 
 def test_pull_without_a_count_covers_the_whole_library():
     assert seams.command("pull", {})[3:] == ["pull", "--all"]
+
+
+def test_clicking_a_post_pulls_just_that_post():
+    assert seams.command("pull", {"shortcodes": ["Abc-_1"]})[3:] == ["pull", "--", "Abc-_1"]
+    with pytest.raises(ValueError):
+        seams.command("pull", {"shortcodes": []})  # never falls through to --all
+    # A shortcode that looks like an option comes after "--", so it stays a name.
+    assert seams.command("pull", {"shortcodes": ["--all"]})[3:] == ["pull", "--", "--all"]
+
+
+def test_the_browser_is_never_left_running_an_old_app_js(client):
+    for path in ("/", "/static/app.js", "/static/app.css"):
+        r = client.get(path)
+        assert r.status_code == 200 and r.headers["cache-control"] == "no-cache", path
+    etag = client.get("/static/app.js").headers["etag"]
+    again = client.get("/static/app.js", headers={"If-None-Match": etag})
+    assert again.status_code == 304 and again.headers["cache-control"] == "no-cache"
+
+
+def test_the_page_names_its_script_by_version(client):
+    html = client.get("/").text
+    assert "/static/app.js?v=" in html and "/static/app.css?v=" in html
+    assert '"/static/app.js"' not in html

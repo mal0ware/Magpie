@@ -5,7 +5,7 @@ import pytest
 from magpie.models import Item
 from magpie.sources import feed
 from magpie.sources.feed import Page, SourceStop
-from magpie.sources.sync import FIRST_SYNC_LIMIT, sync
+from magpie.sources.sync import sync
 from magpie.store import Store
 
 
@@ -75,10 +75,10 @@ def test_limit_refreshes_expiring_urls_of_known_items(store):
     assert store.get("p000").video_url != before
 
 
-def test_plain_sync_on_empty_library_is_capped(store):
+def test_plain_sync_on_empty_library_takes_everything(store):
     fake = FakeFeed(codes(100))
     result, _ = run(store, fake)
-    assert result.new == FIRST_SYNC_LIMIT and order(store) == codes(100)[:FIRST_SYNC_LIMIT]
+    assert result.new == 100 and order(store) == codes(100)
 
 
 def test_plain_sync_stops_at_first_known_shortcode(store):

@@ -39,6 +39,9 @@ PING_INTERVAL = 20  # seconds; keeps the MV3 service worker awake
 EXT_WAIT_FRESH = 40
 EXT_WAIT_MIN = 3
 REQUEST_TIMEOUT = 60  # seconds to wait for the extension's reply
+# Nothing asks the daemon to stay: it is started on demand, so once it has
+# gone this long without a request it exits instead of running for days.
+IDLE_EXIT = 600
 MAX_MESSAGE = 64 * 1024 * 1024  # a saved-feed page is large JSON
 
 NOT_CONNECTED = "extension not connected"
@@ -56,7 +59,9 @@ def origin_allowed(origin: str | None, path: str = "") -> bool:
 
 
 class Daemon:
-    def __init__(self) -> None:
+    def __init__(self, idle_exit: float | None = IDLE_EXIT) -> None:
+        self.idle_exit = idle_exit  # None: run until told to stop
+        self.last_used = time.monotonic()
         self.ext = None
         self.ext_version: str | None = None
         self.ext_ready = asyncio.Event()
@@ -147,6 +152,13 @@ class Daemon:
             return {"ok": True, "data": {"stopping": True}}
         if not action:
             return {"ok": False, "error": "missing action"}
+        self.last_used = time.monotonic()  # `status` above does not count as use
+        try:
+            return await self._relay(action, params)
+        finally:
+            self.last_used = time.monotonic()
+
+    async def _relay(self, action, params: dict) -> dict:
 
         uptime = time.monotonic() - self.started
         try:
@@ -182,9 +194,23 @@ class Daemon:
             log(f"listening on ws://{host}:{bound}")
             if ready:
                 ready(bound)
+            idler = asyncio.ensure_future(self._idle_loop())
             await self.stopping.wait()
+            idler.cancel()
             await asyncio.sleep(0.1)  # let the reply to `stop` go out
         log("stopped")
+
+
+    async def _idle_loop(self) -> None:
+        if self.idle_exit is None:
+            return
+        while True:
+            left = self.idle_exit - (time.monotonic() - self.last_used)
+            if left <= 0 and not self.busy.locked():
+                log(f"idle for {self.idle_exit:.0f} s, exiting")
+                self.stopping.set()
+                return
+            await asyncio.sleep(max(left, 0.05))
 
 
 def main() -> int:

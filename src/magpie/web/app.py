@@ -9,7 +9,7 @@ from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
-from starlette.responses import FileResponse, JSONResponse
+from starlette.responses import FileResponse, HTMLResponse, JSONResponse
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
@@ -49,6 +49,17 @@ def _error(status: int, message: str) -> JSONResponse:
     return JSONResponse({"error": message}, status_code=status)
 
 
+class _FreshStatic(StaticFiles):
+    """The page's own script and stylesheet, always revalidated. Without this
+    a browser keeps running the app.js it cached before an update, and the
+    page behaves like the old version. (An unchanged file is still a 304.)"""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
 async def _json_body(request: Request):
     """POSTs must be JSON, so another site's form cannot trigger them."""
     if not request.headers.get("content-type", "").startswith("application/json"):
@@ -60,7 +71,13 @@ async def _json_body(request: Request):
 
 
 async def index(request: Request):
-    return FileResponse(STATIC / "index.html", headers=_NO_CACHE)
+    # The script and stylesheet addresses carry the file's modification time,
+    # so a browser can never pair this page with a copy it cached earlier.
+    html = (STATIC / "index.html").read_text(encoding="utf-8")
+    for name in ("app.js", "app.css"):
+        stamp = int((STATIC / name).stat().st_mtime)
+        html = html.replace(f"/static/{name}", f"/static/{name}?v={stamp}")
+    return HTMLResponse(html, headers=_NO_CACHE)
 
 
 async def items(request: Request):
@@ -72,8 +89,11 @@ async def items(request: Request):
     limit, offset = max(1, min(limit, 500)), max(0, offset)
     with _store() as s:
         rows = s.recent(limit=limit, offset=offset)
+        # How many videos the Pull button would download, so the page can say
+        # so before it starts.
+        to_pull = len([i for i in s.with_status("media_status", "pending") if not i.hidden])
         return JSONResponse({"items": [_public(i) for i in rows], "total": s.count(),
-                             "limit": limit, "offset": offset})
+                             "to_pull": to_pull, "limit": limit, "offset": offset})
 
 
 async def item(request: Request):
@@ -148,7 +168,7 @@ def create_app() -> Starlette:
             Route("/api/actions", actions),
             Route("/api/actions/{name}", run_action, methods=["POST"]),
             Route("/media/{shortcode}/{name:str}", media),
-            Mount("/static", StaticFiles(directory=STATIC), name="static"),
+            Mount("/static", _FreshStatic(directory=STATIC), name="static"),
         ],
         # Refuse requests addressed to any other name (DNS rebinding).
         middleware=[Middleware(TrustedHostMiddleware,

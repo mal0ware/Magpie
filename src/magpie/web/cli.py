@@ -11,18 +11,24 @@ def _web(args) -> int:
 
     url = f"http://{HOST}:{args.port}"
 
+    if args.action in ("install", "uninstall") and not autostart.supported():
+        print("Starting at login is only set up for Windows and macOS. Here, run "
+              "`magpie web` and leave it open, or add it to your login items.",
+              file=sys.stderr)
+        return 1
     if args.action == "install":
         link = autostart.install(args.port)
         if not autostart.running(HOST, args.port):
             autostart.start_background(args.port)
         print(f"Magpie now starts at login and is running. Bookmark {url}")
-        print(f"(shortcut: {link}; log: {autostart.log_path()}; "
+        print(f"(login item: {link}; log: {autostart.log_path()}; "
               "`magpie web uninstall` removes it)")
         return 0
     if args.action == "uninstall":
         had = autostart.uninstall()
-        print("Removed the login shortcut." if had else "There was no login shortcut.")
-        print("A copy that is already running keeps going until you log out.")
+        print("Removed the login item." if had else "There was no login item.")
+        if autostart.stop_background(HOST, args.port):
+            print("Stopped the camera roll that was running in the background.")
         return 0
 
     if autostart.running(HOST, args.port):
@@ -38,7 +44,11 @@ def _web(args) -> int:
     print(f"magpie web: {url}  (Ctrl+C to stop)")
     if not (args.no_browser or args.background):
         threading.Timer(0.8, webbrowser.open, [url]).start()
-    uvicorn.run(create_app(), host=HOST, port=args.port, log_level="warning")
+    autostart.write_pid()  # so `magpie web uninstall` / `magpie uninstall` can stop it
+    try:
+        uvicorn.run(create_app(), host=HOST, port=args.port, log_level="warning")
+    finally:
+        autostart.clear_pid()
     return 0
 
 
@@ -48,7 +58,7 @@ def register(sub) -> None:
     p = sub.add_parser("web", help="open the camera roll at http://127.0.0.1:8766")
     p.add_argument("action", nargs="?", choices=["install", "uninstall"],
                    help="install: run in the background from login on, so the address "
-                        "can be bookmarked (Windows). uninstall: undo that")
+                        "can be bookmarked (Windows, macOS). uninstall: undo that")
     p.add_argument("--port", type=int, default=PORT)
     p.add_argument("--no-browser", action="store_true", help="do not open a browser tab")
     p.add_argument("--background", action="store_true",

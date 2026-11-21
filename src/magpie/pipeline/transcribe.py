@@ -176,14 +176,15 @@ def transcribe_item(store: Store, item: Item, transcriber: Transcriber) -> str:
 def transcribe_pending(store: Store, last: int | None = None, *, model: str | None = None,
                        device: str | None = None, retry: bool = False,
                        progress: Progress | None = None,
-                       transcriber: Transcriber | None = None) -> dict:
+                       transcriber: Transcriber | None = None,
+                       shortcodes: list[str] | None = None) -> dict:
     """Transcribe items whose media is done and whose transcript is pending.
 
     Same `last` / `retry` meaning as `fetch_pending`. One failed item never
     stops the batch. Returns counts: {"done", "none", "failed", "total"}.
     """
     say = progress or (lambda _msg: None)
-    items = [i for i in _select(store, "transcript_status", last, retry)
+    items = [i for i in _select(store, "transcript_status", last, retry, shortcodes)
              if i.media_status == DONE]
     counts = {"done": 0, "none": 0, "failed": 0, "total": len(items)}
     if not items:

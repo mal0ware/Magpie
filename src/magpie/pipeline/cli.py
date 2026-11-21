@@ -76,7 +76,7 @@ def cmd_pull(args) -> int:
     from . import pull
 
     r = pull(Store(), args.last, model=args.model, device=args.device,
-             retry=args.retry, progress=_say)
+             retry=args.retry, progress=_say, shortcodes=args.shortcodes or None)
     _summary("fetch", r["fetch"])
     _summary("transcribe", r["transcribe"])
     return 0
@@ -121,9 +121,11 @@ def register(sub) -> None:
 
     add("fetch", cmd_fetch, "download videos and thumbnails for pending items")
     add("transcribe", cmd_transcribe, "transcribe downloaded videos", whisper=True)
-    add("pull", cmd_pull, "fetch then transcribe", last_default=30, whisper=True
-        ).add_argument("--all", dest="last", action="store_const", const=None,
-                       help="everything in the library that still needs it")
+    p = add("pull", cmd_pull, "fetch then transcribe", last_default=30, whisper=True)
+    p.add_argument("--all", dest="last", action="store_const", const=None,
+                   help="everything in the library that still needs it")
+    p.add_argument("shortcodes", nargs="*", metavar="SHORTCODE",
+                   help="only these posts, even ones freed or failed before")
     add("copy", cmd_copy, "merged transcripts to the clipboard", last_default=30,
         retry=False).add_argument("--stdout", action="store_true",
                                   help="also print the merged text")

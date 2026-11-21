@@ -130,7 +130,7 @@ def test_sync_cli_explains_how_to_load_the_extension(tmp_path, monkeypatch, caps
     assert cli.main(["sync", "--limit", "30"]) == 1
     out = capsys.readouterr()
     assert "extension is not connected" in out.err and "Load unpacked" in out.err
-    assert "opera://extensions" in out.err
+    assert "chrome://extensions" in out.err
     assert "0 new" in out.out
     assert load_steps() in out.err
 
@@ -162,3 +162,59 @@ def test_sync_cli_end_to_end_through_a_stubbed_bridge(tmp_path, monkeypatch, cap
     monkeypatch.setattr(bridge, "request", lambda *a, **k: {"ok": True, "data": {"status": 429}})
     assert cli.main(["sync"]) == 1
     assert "rate limiting" in capsys.readouterr().err
+
+
+def test_release_is_relayed_and_never_starts_a_daemon(monkeypatch):
+    got = []
+
+    def answer(msg):
+        got.append(msg["action"])
+        return {"ok": True, "data": {"closed": True}}
+
+    async def scenario():
+        d, port, task = await start_daemon()
+        ext = asyncio.create_task(fake_extension(port, answer))
+        while d.ext is None:
+            await asyncio.sleep(0.01)
+        released = await asyncio.to_thread(bridge.release, port)
+        task.cancel()
+        ext.cancel()
+        return released
+
+    assert asyncio.run(scenario()) is True and got == ["release"]
+
+    monkeypatch.setattr(bridge, "start_daemon", lambda: pytest.fail("release started a daemon"))
+    assert bridge.release(port=1) is False
+
+
+def test_daemon_exits_by_itself_when_idle():
+    async def scenario():
+        d = daemon.Daemon(idle_exit=0.2)
+        port = asyncio.get_running_loop().create_future()
+        task = asyncio.create_task(d.serve(port=0, ready=port.set_result))
+        p = await port
+        for _ in range(4):  # being asked for its status does not keep it alive
+            await asyncio.sleep(0.04)
+            await bridge._request("status", {}, p, 5)
+        await asyncio.wait_for(task, 2)
+
+    asyncio.run(scenario())
+
+
+def test_daemon_in_use_does_not_exit(monkeypatch):
+    monkeypatch.setattr(daemon, "EXT_WAIT_FRESH", 0)
+    monkeypatch.setattr(daemon, "EXT_WAIT_MIN", 0.01)
+
+    async def scenario():
+        d = daemon.Daemon(idle_exit=0.3)
+        port = asyncio.get_running_loop().create_future()
+        task = asyncio.create_task(d.serve(port=0, ready=port.set_result))
+        p = await port
+        for _ in range(8):
+            await asyncio.sleep(0.1)
+            await bridge._request("saved", {}, p, 5)
+        alive = not task.done()
+        task.cancel()
+        return alive
+
+    assert asyncio.run(scenario())

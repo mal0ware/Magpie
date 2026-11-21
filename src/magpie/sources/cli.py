@@ -13,22 +13,29 @@ def extension_dir() -> str:
     return str(path) if (path / "manifest.json").exists() else "the extension/ folder of the Magpie repo"
 
 
-def load_steps() -> str:
+def load_steps(again: bool = True) -> str:
+    """How to load the extension. `again=False` is for `magpie setup`, which
+    waits for it instead of asking to be run a second time."""
+    last = ("  4. Leave the browser open, wait half a minute, and run this again.\n"
+            "`magpie bridge --status` shows whether it has connected."
+            if again else
+            "  4. Leave the browser open. Setup carries on by itself once the extension\n"
+            "     connects (it checks in every 30 seconds). Ctrl+C gives up.")
     return (
         "Magpie's browser extension is not connected.\n"
-        "  1. Open Opera GX and log in to instagram.com.\n"
-        "  2. Go to opera://extensions and switch on Developer mode.\n"
+        "  1. Open Chrome, Edge, Brave, Opera GX or Vivaldi and log in to instagram.com.\n"
+        "  2. Go to chrome://extensions (in Opera: opera://extensions) and switch on\n"
+        "     Developer mode.\n"
         f"  3. Click \"Load unpacked\" and pick: {extension_dir()}\n"
-        "  4. Leave the browser open, wait half a minute, and run this again.\n"
-        "`magpie bridge --status` shows whether it has connected."
+        + last
     )
 
 
 _ADVICE = {
     feed.NOT_CONNECTED: load_steps,
     feed.RATE_LIMITED: lambda: "Stopped. Leave it alone for a few hours before syncing again.",
-    feed.LOGIN_REQUIRED: lambda: "Stopped. Log in to instagram.com in Opera GX, then sync again.",
-    feed.CHECKPOINT: lambda: ("Stopped. Open instagram.com in Opera GX and clear the prompt "
+    feed.LOGIN_REQUIRED: lambda: "Stopped. Log in to instagram.com in the browser that has the extension, then sync again.",
+    feed.CHECKPOINT: lambda: ("Stopped. Open instagram.com in that browser and clear the prompt "
                               "yourself; do not sync again until the site works normally."),
 }
 
@@ -44,7 +51,24 @@ def cmd_sync(args) -> int:
         print(f"Note: {result.message}", file=sys.stderr)
     print(f"{result.new} new, {result.seen} looked at, {result.pages} page(s). "
           f"Library: {Store().count()} items.")
+    _thumbnails()
     return 0 if result.ok else 1
+
+
+def _thumbnails() -> None:
+    """Every sync ends by fetching the thumbnails that are missing, while the
+    links the listing gave us still work. Videos are not touched."""
+    from ..pipeline.fetch import fetch_thumbs
+
+    c = fetch_thumbs(Store(), progress=print)
+    if not c["total"]:
+        return
+    print(f"Thumbnails: {c['done']} downloaded.")
+    missed = c["failed"] + c["skipped"]
+    if missed:
+        print(f"{missed} thumbnails could not be fetched; their links have probably "
+              "expired. `magpie sync --all` gets fresh links for every post.",
+              file=sys.stderr)
 
 
 def cmd_import(args) -> int:

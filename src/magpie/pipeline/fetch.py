@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Callable
 
 from .. import store as paths
-from ..models import DONE, FAILED, NONE, PENDING, Item
+from ..models import DONE, FAILED, FREED, NONE, PENDING, Item
 from ..store import Store
 
 USER_AGENT = (
@@ -175,25 +175,73 @@ def fetch_item(store: Store, item: Item) -> str:
     return DONE
 
 
+# -- thumbnails only -------------------------------------------------------------
+
+THUMB_GIVE_UP = 5  # this many refusals in a row means the links have expired
+
+
+def fetch_thumbs(store: Store, *, progress: Progress | None = None) -> dict:
+    """Download the thumbnail of every post in the roll that has none yet, and
+    nothing else. Thumbnails are small (tens of kB), so the roll can show every
+    save without any video on disk. `magpie sync` runs this, because the
+    listing's thumbnail links only work for a few hours after a sync.
+
+    Returns {"done", "failed", "skipped", "total"}. A run of failures stops the
+    batch: that is what expired links look like, and the rest would fail too.
+    """
+    say = progress or (lambda _msg: None)
+    items = [i for i in store.recent(-1) if i.thumb_url
+             and not (paths.thumb_path(i.shortcode).is_file()
+                      and paths.thumb_path(i.shortcode).stat().st_size)]
+    counts = {"done": 0, "failed": 0, "skipped": 0, "total": len(items)}
+    misses = 0
+    for n, item in enumerate(items, 1):
+        thumb = paths.thumb_path(item.shortcode)
+        try:
+            download_url(item.thumb_url, thumb, timeout=20)
+        except Exception:
+            thumb.unlink(missing_ok=True)
+            counts["failed"] += 1
+            misses += 1
+            if misses >= THUMB_GIVE_UP:
+                counts["skipped"] = len(items) - n
+                break
+            continue
+        misses = 0
+        counts["done"] += 1
+        if counts["done"] % 25 == 0:
+            say(f"thumbnails: {counts['done']} of {len(items)}")
+    return counts
+
+
 # -- the batch -----------------------------------------------------------------
 
-def _select(store: Store, column: str, last: int | None, retry: bool) -> list[Item]:
+def _select(store: Store, column: str, last: int | None, retry: bool,
+            shortcodes: list[str] | None = None) -> list[Item]:
+    if shortcodes:
+        # Posts asked for by name (a click in the roll): take them whatever
+        # happened before, including a video that was freed or failed.
+        found = (store.get(c) for c in dict.fromkeys(shortcodes))
+        return [i for i in found if i and not i.hidden
+                and getattr(i, column) in (PENDING, FAILED, FREED)]
     want = (PENDING, FAILED) if retry else (PENDING,)
     pool = store.recent(last) if last else store.recent(-1)
     return [i for i in pool if getattr(i, column) in want]
 
 
 def fetch_pending(store: Store, last: int | None = None, *, retry: bool = False,
-                  delay: float = 1.5, progress: Progress | None = None) -> dict:
+                  delay: float = 1.5, progress: Progress | None = None,
+                  shortcodes: list[str] | None = None) -> dict:
     """Fetch media for pending items, newest saved first.
 
     `last` limits the batch to the N most recently saved items. `retry` also
     takes items that failed before. `delay` seconds pass between downloads.
+    `shortcodes` names the posts to fetch instead, and overrides both.
     One failed item never stops the batch: the error is recorded on the item.
     Returns counts: {"done", "none", "failed", "total"}.
     """
     say = progress or (lambda _msg: None)
-    items = _select(store, "media_status", last, retry)
+    items = _select(store, "media_status", last, retry, shortcodes)
     counts = {"done": 0, "none": 0, "failed": 0, "total": len(items)}
     for n, item in enumerate(items, 1):
         t0 = time.perf_counter()

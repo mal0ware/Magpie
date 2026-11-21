@@ -127,3 +127,54 @@ def test_tiny_download_is_not_a_video(store, net, monkeypatch):
     fetch.fetch_pending(store, delay=0)
     assert store.get("A").media_status == FAILED
     assert not paths.video_path("A").exists()
+
+
+def test_fetch_thumbs_downloads_only_missing_thumbnails_and_no_video(store, net):
+    store.add_listing([item("a", thumb_url="https://cdn/a.jpg", video_url="https://cdn/a/video"),
+                       item("b", thumb_url="https://cdn/b.jpg"),
+                       item("c")])  # added by hand: no link to try
+    paths.thumb_path("b").write_bytes(b"already here")
+
+    assert fetch.fetch_thumbs(store) == {"done": 1, "failed": 0, "skipped": 0, "total": 1}
+    assert net.http == ["https://cdn/a.jpg"] and net.ytdlp == []
+    assert paths.thumb_path("a").read_bytes() == b"jpg"
+    assert not paths.video_path("a").exists()
+    assert store.get("a").media_status == PENDING  # the video is still to be pulled
+
+    net.http.clear()
+    assert fetch.fetch_thumbs(store)["total"] == 0 and net.http == []
+
+
+def test_fetch_thumbs_gives_up_when_the_links_have_expired(store, net):
+    codes = [f"p{n:02d}" for n in range(20)]
+    store.add_listing([item(c, thumb_url=f"https://cdn/{c}.jpg") for c in codes])
+    net.dead_urls = {f"https://cdn/{c}.jpg" for c in codes}
+
+    counts = fetch.fetch_thumbs(store)
+    assert counts == {"done": 0, "failed": 5, "skipped": 15, "total": 20}
+    assert len(net.http) == 5  # not twenty requests that would all be refused
+    assert not paths.thumb_path("p00").exists()
+
+
+def test_one_dead_thumbnail_does_not_stop_the_rest(store, net):
+    store.add_listing([item(c, thumb_url=f"https://cdn/{c}.jpg") for c in "abc"])
+    net.dead_urls = {"https://cdn/b.jpg"}
+    assert fetch.fetch_thumbs(store) == {"done": 2, "failed": 1, "skipped": 0, "total": 3}
+
+
+def test_named_posts_are_fetched_even_if_freed_or_failed_and_nothing_else(store, net):
+    from magpie.models import FREED
+
+    store.add_listing([item(c, video_url=f"https://cdn/{c}/video") for c in "abcd"])
+    store.set_media("b", FREED)
+    store.set_media("c", FAILED, "boom")
+    store.set_media("d", DONE)
+
+    counts = fetch.fetch_pending(store, shortcodes=["a", "b", "c", "d", "nope"], delay=0)
+    assert counts == {"done": 3, "none": 0, "failed": 0, "total": 3}  # d is already here
+    assert sorted(net.http) == [f"https://cdn/{c}/video" for c in "abc"]
+
+    store.add_listing([item("e", video_url="https://cdn/e/video")])
+    net.http.clear()
+    assert fetch.fetch_pending(store, shortcodes=["a"], delay=0)["total"] == 0
+    assert net.http == [] and store.get("e").media_status == PENDING

@@ -61,6 +61,19 @@ def status(port: int = daemon.PORT) -> dict | None:
     return reply.get("data") if reply.get("ok") else None
 
 
+def release(port: int = daemon.PORT) -> bool:
+    """Tell the extension we are done, so it closes an Instagram tab it opened
+    itself. Best effort: never starts a daemon, never raises. An older
+    extension answers "unknown action", which is fine."""
+    try:
+        st = status(port)
+        if not st or not st.get("extension_connected"):
+            return False
+        return bool(request("release", port=port, timeout=10).get("ok"))
+    except Exception:
+        return False
+
+
 def log_path() -> Path:
     return store.home() / "bridge.log"
 

@@ -81,12 +81,22 @@ def unsave(store: Store, shortcodes: Iterable[str], *,
     """Unsave each item on Instagram through the browser extension, then take
     it out of the roll. Stops at the first failure (UnsaveStopped), leaving the
     rest untouched. Returns how many were unsaved."""
-    from ..sources import bridge, feed
+    from ..sources import bridge
 
+    release = lambda: None
     if request is None:
         bridge.ensure_daemon()
-        request = bridge.request
+        request, release = bridge.request, bridge.release
     items = _items(store, shortcodes)
+    try:
+        return _unsave_each(store, items, request, sleep, log)
+    finally:
+        release()  # let the extension close a tab it opened for this
+
+
+def _unsave_each(store: Store, items: list, request, sleep, log) -> int:
+    from ..sources import feed
+
     done = 0
     for n, item in enumerate(items, 1):
         try:

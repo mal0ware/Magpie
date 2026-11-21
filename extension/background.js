@@ -2,7 +2,12 @@
 //
 // Holds a WebSocket to the local Magpie daemon and, when asked, runs
 // Instagram's own saved-feed request from inside a logged-in instagram.com
-// tab. No debugger and no tab groups, so it works in Opera GX.
+// tab. No debugger and no tab groups, so it works in any Chromium browser
+// (Chrome, Edge, Brave, Vivaldi, Opera GX).
+//
+// If it had to open that tab itself, it closes it again: when Magpie says it
+// is done ("release"), or after the tab has sat unused for two minutes. A tab
+// you opened is never closed.
 //
 // It reads the saved feed, and it can unsave a post when Magpie names one
 // (the Unsave button). It makes one request per message from the daemon, never
@@ -16,6 +21,7 @@ const UNSAVE = (id) => `https://www.instagram.com/api/v1/web/save/${id}/unsave/`
 const RECONNECT_MIN_MS = 1000;
 const RECONNECT_MAX_MS = 15000;
 const VERSION = chrome.runtime.getManifest().version;
+const OWNED_TAB_IDLE_MS = 2 * 60 * 1000;
 
 let ws = null;
 let reconnectDelay = RECONNECT_MIN_MS;
@@ -86,15 +92,60 @@ async function handleCommand(action, params) {
     const tabId = await ensureInstagramTab();
     return await igRequest(tabId, UNSAVE(params.media_id), "POST");
   }
+  if (action === "release") {
+    return { closed: await closeOwnedTab() };
+  }
   if (action === "ping") {
     return { pong: true, version: VERSION };
   }
   throw new Error("unknown action: " + action);
 }
 
+// The tab this extension opened itself, if any: {id, used}. Kept in session
+// storage so it survives the service worker being put to sleep.
+//
+// Until the extension is reloaded after an update, the browser still applies
+// the old manifest, which has no "storage" permission. Then this falls back to
+// a plain variable, so a sync keeps working either way.
+const session = chrome.storage && chrome.storage.session;
+let ownedInMemory = null;
+
+async function getOwned() {
+  if (!session) return ownedInMemory;
+  const got = await session.get("ownedTab");
+  return got.ownedTab || null;
+}
+
+async function setOwned(id) {
+  const owned = id == null ? null : { id, used: Date.now() };
+  if (!session) ownedInMemory = owned;
+  else if (owned) await session.set({ ownedTab: owned });
+  else await session.remove("ownedTab");
+}
+
+// Close the tab we opened. Returns whether there was one to close.
+async function closeOwnedTab() {
+  const owned = await getOwned();
+  if (!owned) return false;
+  await setOwned(null);
+  try {
+    await chrome.tabs.remove(owned.id);
+    return true;
+  } catch (e) {
+    return false; // already closed by hand
+  }
+}
+
+async function closeOwnedTabIfIdle() {
+  const owned = await getOwned();
+  if (owned && Date.now() - owned.used > OWNED_TAB_IDLE_MS) await closeOwnedTab();
+}
+
 // Find (or open, in the background) an instagram.com tab and return its id.
 async function ensureInstagramTab() {
   const tabs = await chrome.tabs.query({ url: "https://www.instagram.com/*" });
+  const owned = await getOwned();
+  if (owned && tabs.some((t) => t.id === owned.id)) await setOwned(owned.id); // still in use
   const ready = tabs.find((t) => t.status === "complete");
   if (ready) return ready.id;
   if (tabs.length > 0 && tabs[0].id != null) {
@@ -105,9 +156,16 @@ async function ensureInstagramTab() {
     url: "https://www.instagram.com/",
     active: false,
   });
+  await setOwned(created.id); // ours to close again
   await waitForTabComplete(created.id);
   return created.id;
 }
+
+// If you start using the tab we opened, it is yours: stop tracking it.
+chrome.tabs.onActivated.addListener(async ({ tabId }) => {
+  const owned = await getOwned();
+  if (owned && owned.id === tabId) await setOwned(null);
+});
 
 function waitForTabComplete(tabId, timeoutMs = 20000) {
   return new Promise((resolve, reject) => {
@@ -180,7 +238,9 @@ chrome.runtime.onInstalled.addListener(() => connect());
 chrome.runtime.onStartup.addListener(() => connect());
 chrome.alarms.create("magpie-bridge-keepalive", { periodInMinutes: 0.5 });
 chrome.alarms.onAlarm.addListener((alarm) => {
-  if (alarm.name === "magpie-bridge-keepalive") connect();
+  if (alarm.name !== "magpie-bridge-keepalive") return;
+  connect();
+  closeOwnedTabIfIdle();
 });
 
 connect();

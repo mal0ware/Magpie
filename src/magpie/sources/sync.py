@@ -24,7 +24,6 @@ from ..store import Store
 from . import bridge
 from .feed import NOT_CONNECTED, UNEXPECTED, Page, SourceStop, read_reply
 
-FIRST_SYNC_LIMIT = 30  # a plain `magpie sync` on an empty library takes this many
 PAGE_DELAY = (2.5, 5.0)  # seconds between pages, picked at random in this range
 
 
@@ -48,7 +47,8 @@ def sync(store: Store, fetch_page: Callable[[str | None], Page], *,
          log: Callable[[str], None] = lambda s: None) -> SyncResult:
     """Walk the saved feed newest first and record it.
 
-    Default: stop at the first post already in the store.
+    Default: stop at the first post already in the store. On an empty store
+    there is nothing to stop at, so the default walks the whole feed.
     limit=N: look at the N most recently saved posts, known or not (this also
     refreshes their expiring CDN urls).
     everything=True: walk to the end of the feed.
@@ -57,9 +57,9 @@ def sync(store: Store, fetch_page: Callable[[str | None], Page], *,
     result = SyncResult()
     started_empty = store.count() == 0
     if limit is None and not everything and started_empty:
-        limit = FIRST_SYNC_LIMIT
-        log(f"Empty library: taking the {limit} most recent saves. "
-            "Use `magpie sync --all` for the whole history.")
+        everything = True
+        log("Empty library: listing your whole saved history. "
+            "This only lists posts; nothing is downloaded yet.")
     stop_at_known = limit is None and not everything
 
     head: list[Item] = []  # newer than anything in the store, not yet written
@@ -160,8 +160,11 @@ def run_sync(limit: int | None = None, everything: bool = False, *,
     """Sync from the logged-in browser. Blocking (it sleeps between pages), so
     run it in a worker thread from async code. Never raises for Instagram or
     bridge trouble: look at `result.stopped` and `result.message`."""
-    return sync(store or Store(), bridge_fetcher(raw_dir, log),
-                limit=limit, everything=everything, log=log)
+    try:
+        return sync(store or Store(), bridge_fetcher(raw_dir, log),
+                    limit=limit, everything=everything, log=log)
+    finally:
+        bridge.release()  # let the extension close a tab it opened for this
 
 
 __all__ = ["SyncResult", "sync", "run_sync", "bridge_fetcher", "NOT_CONNECTED"]

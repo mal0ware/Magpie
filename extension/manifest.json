@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Magpie Bridge",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Lets the local `magpie` tool list your own Instagram Saved posts through your logged-in session. Talks only to 127.0.0.1. Personal use.",
-  "permissions": ["scripting", "tabs", "alarms"],
+  "permissions": ["scripting", "tabs", "alarms", "storage"],
   "host_permissions": ["https://www.instagram.com/*"],
   "background": {
     "service_worker": "background.js"

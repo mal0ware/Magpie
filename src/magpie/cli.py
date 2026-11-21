@@ -4,6 +4,7 @@ package and exposes `register(subparsers)`; this file only wires them up."""
 import argparse
 import sys
 
+from . import setup as setup_cli
 from .manage import cli as manage_cli
 from .pipeline import cli as pipeline_cli
 from .sources import cli as sources_cli
@@ -13,7 +14,7 @@ from .web import cli as web_cli
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="magpie", description=__doc__)
     sub = parser.add_subparsers(dest="command")
-    for track in (sources_cli, pipeline_cli, manage_cli, web_cli):
+    for track in (sources_cli, pipeline_cli, manage_cli, web_cli, setup_cli):
         track.register(sub)
     if argv is None:
         argv = sys.argv[1:]

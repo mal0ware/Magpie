@@ -92,10 +92,11 @@ ACTIONS = {
     "remove": ("manage", lambda opts: ["remove", *_codes(opts)]),
     "unsave": ("manage", lambda opts: ["unsave", *_codes(opts)]),
     "sync": ("sources", lambda opts: ["sync"]),
-    # No "last" means the whole library: the roll is the main way in, so its
-    # Pull button catches up on everything that still needs downloading.
-    "pull": ("pipeline", lambda opts: ["pull", "--last", str(int(opts["last"]))]
-             if opts.get("last") else ["pull", "--all"]),
+    # "shortcodes" is a click on a post: just that one. No "last" means the
+    # whole library: the Pull button catches up on everything not downloaded.
+    "pull": ("pipeline", lambda opts: ["pull", *_codes(opts)] if "shortcodes" in opts
+             else ["pull", "--last", str(int(opts["last"]))] if opts.get("last")
+             else ["pull", "--all"]),
 }
 
 
